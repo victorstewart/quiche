@@ -2008,10 +2008,12 @@ impl Connection {
         Ok(read)
     }
 
-    /// Writes a single QUIC packet to be sent to the peer.
+    /// Writes a single QUIC packet to be sent to the peer along with
+    /// [`SendInfo`] which includes info like time to send the packet out.
     ///
     /// On success the number of bytes written to the output buffer is
-    /// returned, or [`Done`] if there was nothing to write.
+    /// returned along with [`SendInfo`], or [`Done`] if there was nothing
+    /// to write.
     ///
     /// The application should call `send()` multiple times until [`Done`] is
     /// returned, indicating that there are no more packets to send. It is
@@ -2031,6 +2033,7 @@ impl Connection {
     /// [`on_timeout()`]: struct.Connection.html#method.on_timeout
     /// [`stream_send()`]: struct.Connection.html#method.stream_send
     /// [`stream_shutdown()`]: struct.Connection.html#method.stream_shutdown
+    /// [`SendInfo`]: struct.SendInfo.html
     ///
     /// ## Examples:
     ///
@@ -2041,8 +2044,11 @@ impl Connection {
     /// # let scid = quiche::ConnectionId::from_ref(&[0xba; 16]);
     /// # let mut conn = quiche::accept(&scid, None, &mut config)?;
     /// loop {
-    ///     let write = match conn.send(&mut out) {
-    ///         Ok(v) => v,
+    ///     let write = match conn.send_with_info(&mut out) {
+    ///         Ok((v, send_info)) => {
+    ///             // Use send_info
+    ///             v
+    ///         },
     ///
     ///         Err(quiche::Error::Done) => {
     ///             // Done writing.
@@ -2059,10 +2065,14 @@ impl Connection {
     /// }
     /// # Ok::<(), quiche::Error>(())
     /// ```
-    pub fn send(&mut self, out: &mut [u8]) -> Result<usize> {
+    pub fn send_with_info(
+        &mut self, out: &mut [u8],
+    ) -> Result<(usize, SendInfo)> {
         if out.is_empty() {
             return Err(Error::BufferTooShort);
         }
+
+        let now = time::Instant::now();
 
         let mut has_initial = false;
 
@@ -2081,7 +2091,7 @@ impl Connection {
         // Generate coalesced packets.
         while left > 0 {
             let (ty, written) =
-                match self.send_single(&mut out[done..done + left]) {
+                match self.send_single(&mut out[done..done + left], now) {
                     Ok(v) => v,
 
                     Err(Error::BufferTooShort) | Err(Error::Done) => break,
@@ -2102,6 +2112,10 @@ impl Connection {
             };
         }
 
+        let out_info = SendInfo {
+            send_time: self.recovery.get_packet_send_time().unwrap_or(now),
+        };
+
         if done == 0 {
             return Err(Error::Done);
         }
@@ -2117,12 +2131,12 @@ impl Connection {
             done += pad_len;
         }
 
-        Ok(done)
+        Ok((done, out_info))
     }
 
-    fn send_single(&mut self, out: &mut [u8]) -> Result<(packet::Type, usize)> {
-        let now = time::Instant::now();
-
+    fn send_single(
+        &mut self, out: &mut [u8], now: time::Instant,
+    ) -> Result<(packet::Type, usize)> {
         if out.is_empty() {
             return Err(Error::BufferTooShort);
         }
@@ -2916,6 +2930,62 @@ impl Connection {
         }
 
         Ok((pkt_type, written))
+    }
+
+    /// Writes a single QUIC packet to be sent to the peer.
+    ///
+    /// On success the number of bytes written to the output buffer is
+    /// returned, or [`Done`] if there was nothing to write.
+    ///
+    /// The application should call `send()` multiple times until [`Done`] is
+    /// returned, indicating that there are no more packets to send. It is
+    /// recommended that `send()` be called in the following cases:
+    ///
+    ///  * When the application receives QUIC packets from the peer (that is,
+    ///    any time [`recv()`] is also called).
+    ///
+    ///  * When the connection timer expires (that is, any time [`on_timeout()`]
+    ///    is also called).
+    ///
+    ///  * When the application sends data to the peer (for examples, any time
+    ///    [`stream_send()`] or [`stream_shutdown()`] are called).
+    ///
+    /// [`Done`]: enum.Error.html#variant.Done
+    /// [`recv()`]: struct.Connection.html#method.recv
+    /// [`on_timeout()`]: struct.Connection.html#method.on_timeout
+    /// [`stream_send()`]: struct.Connection.html#method.stream_send
+    /// [`stream_shutdown()`]: struct.Connection.html#method.stream_shutdown
+    ///
+    /// ## Examples:
+    ///
+    /// ```no_run
+    /// # let mut out = [0; 512];
+    /// # let socket = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
+    /// # let mut config = quiche::Config::new(quiche::PROTOCOL_VERSION)?;
+    /// # let scid = quiche::ConnectionId::from_ref(&[0xba; 16]);
+    /// # let mut conn = quiche::accept(&scid, None, &mut config)?;
+    /// loop {
+    ///     let write = match conn.send(&mut out) {
+    ///         Ok(v) => v,
+    ///
+    ///         Err(quiche::Error::Done) => {
+    ///             // Done writing.
+    ///             break;
+    ///         },
+    ///
+    ///         Err(e) => {
+    ///             // An error occurred, handle it.
+    ///             break;
+    ///         },
+    ///     };
+    ///
+    ///     socket.send(&out[..write]).unwrap();
+    /// }
+    /// # Ok::<(), quiche::Error>(())
+    /// ```
+    pub fn send(&mut self, out: &mut [u8]) -> Result<usize> {
+        let (written, _) = self.send_with_info(out)?;
+        Ok(written)
     }
 
     // Returns the maximum size of a packet to be sent.
@@ -4482,6 +4552,12 @@ fn drop_pkt_on_err(
     // Ignore other invalid packets that haven't been authenticated to prevent
     // man-in-the-middle and man-on-the-side attacks.
     Error::Done
+}
+
+/// Info send out on every send_with_info call.
+pub struct SendInfo {
+    /// Time to send the packet out.
+    pub send_time: time::Instant,
 }
 
 /// Statistics about the connection.
@@ -8333,6 +8409,8 @@ mod tests {
 
         let mut pipe = testing::Pipe::default().unwrap();
 
+        let mut now = time::Instant::now();
+
         // Client sends padded Initial.
         let len = pipe.client.send(&mut buf).unwrap();
         assert_eq!(len, 1200);
@@ -8344,13 +8422,15 @@ mod tests {
         testing::process_flight(&mut pipe.client, flight).unwrap();
 
         // Client sends Initial packet with ACK.
-        let (ty, len) = pipe.client.send_single(&mut buf).unwrap();
+        let (ty, len) = pipe.client.send_single(&mut buf, now).unwrap();
         assert_eq!(ty, Type::Initial);
 
         assert_eq!(pipe.server.recv(&mut buf[..len]), Ok(len));
 
+        now = time::Instant::now();
+
         // Client sends Handshake packet.
-        let (ty, len) = pipe.client.send_single(&mut buf).unwrap();
+        let (ty, len) = pipe.client.send_single(&mut buf, now).unwrap();
         assert_eq!(ty, Type::Handshake);
 
         // Packet type is corrupted to Initial.

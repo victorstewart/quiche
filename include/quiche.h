@@ -258,6 +258,16 @@ ssize_t quiche_conn_recv(quiche_conn *conn, uint8_t *buf, size_t buf_len);
 // Writes a single QUIC packet to be sent to the peer.
 ssize_t quiche_conn_send(quiche_conn *conn, uint8_t *out, size_t out_len);
 
+typedef struct {
+    // Time to send the packet out.
+    struct timespec send_time;
+} quiche_send_info;
+
+// Writes a single QUIC packet to be sent to the peer and fills in the send_info
+// struct. Linux only.
+ssize_t quiche_conn_send_with_info(quiche_conn *conn, uint8_t *out, size_t out_len,
+                                   quiche_send_info *out_info);
+
 // Reads contiguous data from a stream.
 ssize_t quiche_conn_stream_recv(quiche_conn *conn, uint64_t stream_id,
                                 uint8_t *out, size_t buf_len, bool *fin);

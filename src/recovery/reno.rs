@@ -43,6 +43,7 @@ pub static RENO: CongestionControlOps = CongestionControlOps {
     on_packet_acked,
     congestion_event,
     collapse_cwnd,
+    has_custom_pacing,
 };
 
 pub fn on_packet_sent(r: &mut Recovery, sent_bytes: usize, _now: Instant) {
@@ -154,6 +155,10 @@ pub fn collapse_cwnd(r: &mut Recovery) {
     r.congestion_window = r.max_datagram_size * recovery::MINIMUM_WINDOW_PACKETS;
     r.bytes_acked_sl = 0;
     r.bytes_acked_ca = 0;
+}
+
+fn has_custom_pacing() -> bool {
+    false
 }
 
 #[cfg(test)]
