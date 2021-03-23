@@ -14,7 +14,7 @@ docker-build: docker-base docker-qns
 # build quiche-apps only
 .PHONY: build-apps
 build-apps:
-	cargo build --manifest-path tools/apps/Cargo.toml
+	cargo build --manifest-path apps/Cargo.toml
 
 # build base image
 .PHONY: docker-base

@@ -25,5 +25,5 @@ for arch in arm64-v8a armeabi-v7a x86_64 x86
 do
     echo "> buliding $arch..."
 
-    cargo ndk -t $arch -p $API_LEVEL -- build --features ffi $*
+    cargo ndk -t $arch -p $API_LEVEL -- build --manifest-path quiche/Cargo.toml --features ffi $*
 done

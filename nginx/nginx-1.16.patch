@@ -116,7 +116,7 @@ index 000000000..23219d92a
 +        QUICHE_BUILD_TARGET="debug"
 +    fi
 +
-+    CORE_INCS="$CORE_INCS $QUICHE/include"
++    CORE_INCS="$CORE_INCS $QUICHE/quiche/include"
 +    CORE_DEPS="$CORE_DEPS $QUICHE/target/$QUICHE_BUILD_TARGET/libquiche.a"
 +    CORE_LIBS="$CORE_LIBS $QUICHE/target/$QUICHE_BUILD_TARGET/libquiche.a $NGX_LIBPTHREAD"
 +
@@ -151,7 +151,7 @@ index 000000000..6e5ede5bc
 +$QUICHE/target/$QUICHE_BUILD_TARGET/libquiche.a: \\
 +		$OPENSSL/.openssl/include/openssl/ssl.h \\
 +		$NGX_MAKEFILE
-+	cd $QUICHE && cargo build $QUICHE_BUILD_FLAGS $QUICHE_OPT
++	cargo build --manifest-path=$QUICHE/Cargo.toml --package=quiche $QUICHE_BUILD_FLAGS $QUICHE_OPT
 +
 +END
 diff --git a/auto/make b/auto/make

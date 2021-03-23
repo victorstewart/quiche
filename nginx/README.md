@@ -43,7 +43,7 @@ And finally build NGINX with HTTP/3 support enabled:
        --with-http_ssl_module                  \
        --with-http_v2_module                   \
        --with-http_v3_module                   \
-       --with-openssl=../quiche/deps/boringssl \
+       --with-openssl=../quiche/quiche/deps/boringssl \
        --with-quiche=../quiche
  % make
 ```
